@@ -6,8 +6,10 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
-#define BUTTON_PRESSED !(PIND & (1 << PD3))
 #define BUTTON_STANDBY_TIMER_TOP 50
+#define BUTTON_PRESS_MANUAL_STOP 1
+#define BUTTON_PRESS_RESET_TIMER 2
+#define BUTTON_PRESS_MANUAL_SPIN 3
 #define PERIOD 20 // 28800
 
 volatile uint8_t timer_seconds;
@@ -16,17 +18,58 @@ volatile uint8_t timer_ticks;
 volatile uint8_t button_press_counter;
 volatile uint8_t button_wait_timer;
 
-void yellow_led_on() {
+static inline void led_on() {
     PORTC |= (1 << PC0);
 }
 
-void yellow_led_off() {
+static inline void led_off() {
     PORTC &= !(1 << PC0);
 }
 
-ISR(INT0_vect) {
+static inline void servo_on() {
+    OCR1A = 500;
+}
+
+static inline void servo_off() {
     OCR1A = 0;
-    yellow_led_off();
+}
+
+void handle_button_press() {
+    switch (button_press_counter) {
+        case BUTTON_PRESS_MANUAL_STOP:
+            servo_off();
+            break;
+        case BUTTON_PRESS_RESET_TIMER:
+            timer_seconds = 0;
+            break;
+        case BUTTON_PRESS_MANUAL_SPIN:
+            servo_on();
+            break;
+        default:
+            break;
+    }
+    button_press_counter = 0;
+}
+
+void handle_led_blinking() {
+    switch (timer_seconds) {
+        case 1:
+            led_on();
+            break;
+        case 2:
+            led_off();
+            break;
+        case 3:
+            led_on();
+            break;
+        default:
+            led_off();
+            break;
+    }
+}
+
+ISR(INT0_vect) {
+    servo_off();
 }
 
 ISR(INT1_vect) {
@@ -42,10 +85,10 @@ ISR(TIMER1_COMPA_vect) {
         timer_seconds++;
         timer_ticks = 0;
     }
-    if (timer_seconds == PERIOD) {
+    handle_led_blinking();
+    if (timer_seconds >= PERIOD) {
         if (OCR1A == 0) {
-            yellow_led_on();
-            OCR1A = 800;
+            servo_on();
         }
         timer_seconds = 0;
     }
@@ -54,14 +97,7 @@ ISR(TIMER1_COMPA_vect) {
         button_wait_timer--;
     }
     if (button_press_counter > 0 && button_wait_timer == 0) {
-        if (button_press_counter == 2) {
-            yellow_led_off();
-            OCR1A = 0;
-        } else {
-            yellow_led_on();
-            OCR1A = 800;
-        }
-        button_press_counter = 0;
+        handle_button_press();
     }
 }
 
