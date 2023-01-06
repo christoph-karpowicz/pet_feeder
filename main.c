@@ -5,29 +5,35 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
+#include <stdbool.h>
 
 #define BUTTON_STANDBY_TIMER_TOP 50
 #define BUTTON_PRESS_MANUAL_STOP 1
 #define BUTTON_PRESS_RESET_TIMER 2
 #define BUTTON_PRESS_MANUAL_SPIN 3
+#define SERVO_ON_MAX_SECONDS 5
 #define PERIOD 20 // 28800
 
-volatile uint8_t timer_seconds;
+volatile uint16_t timer_seconds;
+volatile uint8_t servo_on_seconds;
 volatile uint8_t timer_ticks;
 
 volatile uint8_t button_press_counter;
 volatile uint8_t button_wait_timer;
 
+bool error_occurred;
+
 static inline void led_on() {
-    PORTC |= (1 << PC0);
+    PORTD |= (1 << PD7);
 }
 
 static inline void led_off() {
-    PORTC &= !(1 << PC0);
+    PORTD &= !(1 << PD7);
 }
 
 static inline void servo_on() {
     OCR1A = 500;
+    servo_on_seconds = 0;
 }
 
 static inline void servo_off() {
@@ -41,6 +47,7 @@ void handle_button_press() {
             break;
         case BUTTON_PRESS_RESET_TIMER:
             timer_seconds = 0;
+            error_occurred = false;
             break;
         case BUTTON_PRESS_MANUAL_SPIN:
             servo_on();
@@ -52,6 +59,15 @@ void handle_button_press() {
 }
 
 void handle_led_blinking() {
+    if (error_occurred) {
+        if (timer_seconds % 2 != 0) {
+            led_on();
+        } else {
+            led_off();
+        }
+        return;
+    }
+    
     switch (timer_seconds) {
         case 1:
             led_on();
@@ -81,37 +97,44 @@ ISR(INT1_vect) {
 
 ISR(TIMER1_COMPA_vect) {
     timer_ticks++;
-    if (timer_ticks >= 50) {
+    if (timer_ticks > 50) {
         timer_seconds++;
         timer_ticks = 0;
-    }
-    handle_led_blinking();
-    if (timer_seconds >= PERIOD) {
-        if (OCR1A == 0) {
-            servo_on();
+        if (OCR1A != 0) {
+            servo_on_seconds++;
+            if (servo_on_seconds > SERVO_ON_MAX_SECONDS) {
+                servo_off();
+                error_occurred = true;
+            }
         }
-        timer_seconds = 0;
+
+        handle_led_blinking();
+        if (timer_seconds >= PERIOD && !error_occurred) {
+            if (OCR1A == 0) {
+                servo_on();
+                timer_seconds = 0;
+            }
+        }
     }
 
     if (button_wait_timer > 0) {
         button_wait_timer--;
-    }
-    if (button_press_counter > 0 && button_wait_timer == 0) {
+    } else if (button_press_counter > 0 && button_wait_timer == 0) {
         handle_button_press();
     }
 }
 
-int main(void) {
+void init() {
     // Button
     DDRD &= !(1 << PD3);
     // Yellow LED
-    DDRC |= (1 << PC0);
+    DDRD |= (1 << PD7);
 
     // Servo control
     // Fast PWM Waveform Generation Mode
     TCCR1A |= (1 << WGM11);
     TCCR1B |= (1 << WGM12) | (1 << WGM13);
-    // 1 timer divider
+    // Timer divider 1 value
     TCCR1B |= (1 << CS10);
     // Set output to OCR1A
     TCCR1A |= (1 << COM1A1);
@@ -132,6 +155,10 @@ int main(void) {
 
     _delay_ms(1000);
     sei();
+}
+
+int main(void) {
+    init();
     while (1) {
     }
     return 0;
