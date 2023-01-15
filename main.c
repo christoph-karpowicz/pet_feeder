@@ -124,7 +124,14 @@ ISR(TIMER1_COMPA_vect) {
     }
 }
 
+void disable_JTAG() {
+    MCUCSR |= (1 << JTD);
+    MCUCSR |= (1 << JTD);
+}
+
 void init() {
+    disable_JTAG();
+    
     // Button
     DDRD &= !(1 << PD3);
     // Yellow LED
