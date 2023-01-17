@@ -129,8 +129,13 @@ void disable_JTAG() {
     MCUCSR |= (1 << JTD);
 }
 
+void disable_analog_comp() {
+    ACSR |= (1 << ACD);
+}
+
 void init() {
     disable_JTAG();
+    disable_analog_comp();
     
     // Button
     DDRD &= !(1 << PD3);
