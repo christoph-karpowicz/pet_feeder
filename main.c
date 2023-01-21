@@ -7,8 +7,12 @@
 #include <util/delay.h>
 #include <stdbool.h>
 
-#define DS1307_R 0xD1u 
-#define DS1307_W 0xD0u 
+#define DS1307_R 0xD1u
+#define DS1307_W 0xD0u
+#define I2C_STATUS_REG (TWSR & 0xF8)
+#define I2C_START 0x08
+#define I2C_WRITE_ADDR 0x18
+#define I2C_WRITE_BYTE 0x28
 
 #define BUTTON_STANDBY_TIMER_TOP 50
 #define BUTTON_PRESS_MANUAL_STOP 1
@@ -102,7 +106,11 @@ ISR(INT1_vect) {
 
 // External interrupt caused by a DS1307 RTC clock
 ISR(INT2_vect) {
-    
+    // if (PORTD & (1 << PD7)) {
+    //     led_off();
+    // } else {
+    //     led_on();
+    // }
 }
 
 ISR(TIMER1_COMPA_vect) {
@@ -135,13 +143,16 @@ ISR(TIMER1_COMPA_vect) {
 }
 
 void I2C_init() {
-    // 1000000/(16+2*12*1) = 25Khz
+    // 1000000/(16+2*12*4) = 100Khz
+    TWSR = (1 << TWPS0);
     TWBR = 12;
 }
 
 void I2C_start() {
     TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
     while (!(TWCR & (1 << TWINT)));
+    if (I2C_STATUS_REG != I2C_START)
+        error_occurred = true;
 }
 
 void I2C_stop() {
@@ -167,8 +178,14 @@ uint8_t I2C_read(uint8_t ack) {
 void I2C_send(uint8_t addr, uint8_t data) {
     I2C_start();
     I2C_write(DS1307_W);
+    if (I2C_STATUS_REG != I2C_WRITE_ADDR)
+        error_occurred = true;
     I2C_write(addr);
+    if (I2C_STATUS_REG != I2C_WRITE_BYTE)
+        error_occurred = true;
     I2C_write(data);
+    if (I2C_STATUS_REG != I2C_WRITE_BYTE)
+        error_occurred = true;
     I2C_stop();
 }
 
@@ -224,6 +241,10 @@ void init() {
     MCUCR |= (1 << ISC01) | (1 << ISC00);
     // Generate INT1 interrupt on falling egde
     MCUCR |= (1 << ISC11);
+
+    I2C_init();
+    // Enable SQW/OUT with frequency of 1Hz
+    I2C_send(0x07, 0x10);
 
     _delay_ms(1000);
     sei();
