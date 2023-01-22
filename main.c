@@ -7,8 +7,8 @@
 #include <util/delay.h>
 #include <stdbool.h>
 
-#define DS1307_R 0xD1u
-#define DS1307_W 0xD0u
+#define DS1307_R 0xD1
+#define DS1307_W 0xD0
 #define I2C_STATUS_REG (TWSR & 0xF8)
 #define I2C_START 0x08
 #define I2C_WRITE_ADDR 0x18
@@ -23,7 +23,6 @@
 
 volatile uint16_t timer_seconds;
 volatile uint8_t servo_on_seconds;
-volatile uint8_t timer_ticks;
 
 volatile uint8_t button_press_counter;
 volatile uint8_t button_wait_timer;
@@ -106,35 +105,25 @@ ISR(INT1_vect) {
 
 // External interrupt caused by a DS1307 RTC clock
 ISR(INT2_vect) {
-    // if (PORTD & (1 << PD7)) {
-    //     led_off();
-    // } else {
-    //     led_on();
-    // }
-}
-
-ISR(TIMER1_COMPA_vect) {
-    timer_ticks++;
-    if (timer_ticks > 50) {
-        timer_seconds++;
-        timer_ticks = 0;
-        if (OCR1A != 0) {
-            servo_on_seconds++;
-            if (servo_on_seconds > SERVO_ON_MAX_SECONDS) {
-                servo_off();
-                error_occurred = true;
-            }
-        }
-
-        handle_led_blinking();
-        if (timer_seconds >= PERIOD && !error_occurred) {
-            if (OCR1A == 0) {
-                servo_on();
-                timer_seconds = 0;
-            }
+    timer_seconds++;
+    if (OCR1A != 0) {
+        servo_on_seconds++;
+        if (servo_on_seconds > SERVO_ON_MAX_SECONDS) {
+            servo_off();
+            error_occurred = true;
         }
     }
 
+    handle_led_blinking();
+    if (timer_seconds >= PERIOD && !error_occurred) {
+        if (OCR1A == 0) {
+            servo_on();
+            timer_seconds = 0;
+        }
+    }
+}
+
+ISR(TIMER1_COMPA_vect) {
     if (button_wait_timer > 0) {
         button_wait_timer--;
     } else if (button_press_counter > 0 && button_wait_timer == 0) {
@@ -245,6 +234,8 @@ void init() {
     I2C_init();
     // Enable SQW/OUT with frequency of 1Hz
     I2C_send(0x07, 0x10);
+    _delay_ms(100);
+    I2C_send(0x00, 0);
 
     _delay_ms(1000);
     sei();
