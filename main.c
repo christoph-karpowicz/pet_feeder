@@ -6,6 +6,7 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 #include <stdbool.h>
+#include <avr/sleep.h>
 
 #define DS1307_R 0xD1
 #define DS1307_W 0xD0
@@ -27,6 +28,8 @@ volatile uint8_t servo_on_seconds;
 volatile uint8_t button_press_counter;
 volatile uint8_t button_wait_timer;
 
+volatile bool is_sleeping;
+
 bool error_occurred;
 
 static inline void led_on() {
@@ -38,12 +41,17 @@ static inline void led_off() {
 }
 
 static inline void servo_on() {
+    wake_up();
     OCR1A = 500;
     servo_on_seconds = 0;
 }
 
 static inline void servo_off() {
     OCR1A = 0;
+}
+
+static inline bool is_servo_on() {
+    return OCR1A != 0;
 }
 
 void handle_button_press() {
@@ -62,6 +70,7 @@ void handle_button_press() {
             break;
     }
     button_press_counter = 0;
+    disable_PWN_interrupt();
 }
 
 void handle_led_blinking() {
@@ -90,6 +99,25 @@ void handle_led_blinking() {
     }
 }
 
+// Turns on the Timer/Counter1 Output Compare A match interrupt
+void enable_PWN_interrupt() {
+    TIMSK |= (1 << OCIE1A);
+}
+
+void disable_PWN_interrupt() {
+    TIMSK &= !(1 << OCIE1A);
+}
+
+void put_to_sleep() {
+    if (button_press_counter == 0 && !is_servo_on()) {
+        is_sleeping = true;
+    }
+}
+
+void wake_up() {
+    is_sleeping = false;
+}
+
 // External interrupt caused by a contact
 ISR(INT0_vect) {
     servo_off();
@@ -97,16 +125,27 @@ ISR(INT0_vect) {
 
 // External interrupt caused by a button
 ISR(INT1_vect) {
+    wake_up();
+    enable_PWN_interrupt();
     if (button_wait_timer < BUTTON_STANDBY_TIMER_TOP - 10) {
         button_press_counter++;
         button_wait_timer = BUTTON_STANDBY_TIMER_TOP;
     }
 }
 
+// Internal interrupt caused by Timer/Counter1
+ISR(TIMER1_COMPA_vect) {
+    if (button_wait_timer > 0) {
+        button_wait_timer--;
+    } else if (button_press_counter > 0 && button_wait_timer == 0) {
+        handle_button_press();
+    }
+}
+
 // External interrupt caused by a DS1307 RTC clock
 ISR(INT2_vect) {
     timer_seconds++;
-    if (OCR1A != 0) {
+    if (is_servo_on()) {
         servo_on_seconds++;
         if (servo_on_seconds > SERVO_ON_MAX_SECONDS) {
             servo_off();
@@ -116,23 +155,16 @@ ISR(INT2_vect) {
 
     handle_led_blinking();
     if (timer_seconds >= PERIOD && !error_occurred) {
-        if (OCR1A == 0) {
+        if (!is_servo_on()) {
             servo_on();
             timer_seconds = 0;
         }
     }
-}
-
-ISR(TIMER1_COMPA_vect) {
-    if (button_wait_timer > 0) {
-        button_wait_timer--;
-    } else if (button_press_counter > 0 && button_wait_timer == 0) {
-        handle_button_press();
-    }
+    put_to_sleep();
 }
 
 void I2C_init() {
-    // 1000000/(16+2*12*4) = 100Khz
+    // 1000000/(16+2*12*4) = 100kHz
     TWSR = (1 << TWPS0);
     TWBR = 12;
 }
@@ -222,8 +254,6 @@ void init() {
     DDRD |= (1 << PD5);
 
     // Interrupts
-    // Turn on the Timer/Counter1 Output Compare A match interrupt
-    TIMSK |= (1 << OCIE1A);
     // Turn on interrupts on pins INT0, INT1 and INT2
     GICR |= (1 << INT0) | (1 << INT1) | (1 << INT2);
     // Generate INT0 interrupt on rising egde
@@ -241,10 +271,15 @@ void init() {
     sei();
 }
 
-// 1000000 / 64, 125
 int main(void) {
     init();
+    set_sleep_mode(SLEEP_MODE_IDLE);
     while (1) {
+        if (is_sleeping) {
+            sleep_enable();
+            sleep_cpu();
+            sleep_disable();
+        }
     }
     return 0;
 }
