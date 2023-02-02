@@ -14,9 +14,10 @@
 #define BUTTON_STANDBY_TIMER_TOP 50
 #define BUTTON_PRESS_MANUAL_STOP 1
 #define BUTTON_PRESS_RESET_TIMER 2
-#define BUTTON_PRESS_MANUAL_SPIN 3
+#define BUTTON_PRESS_TEST_MODE 3
 #define SERVO_ON_MAX_SECONDS 5
-#define PERIOD 20 // 28800
+#define PERIOD_TEST_MODE 20
+#define PERIOD 28800
 
 volatile uint16_t timer_seconds;
 volatile uint8_t servo_on_seconds;
@@ -27,6 +28,7 @@ volatile uint8_t button_wait_timer;
 
 volatile bool is_sleeping;
 
+bool test_mode;
 bool error_occurred;
 
 static inline void led_on() {
@@ -63,9 +65,12 @@ void handle_button_press_sequence() {
             wake_up();
             timer_seconds = 0;
             error_occurred = false;
+            test_mode = false;
             break;
-        case BUTTON_PRESS_MANUAL_SPIN:
-            servo_on();
+        case BUTTON_PRESS_TEST_MODE:
+            wake_up();
+            led_on();
+            test_mode = true;
             break;
         default:
             break;
@@ -151,11 +156,16 @@ ISR(INT2_vect) {
         if (servo_on_seconds > SERVO_ON_MAX_SECONDS) {
             servo_off();
             error_occurred = true;
+            test_mode = false;
         }
     }
 
-    handle_led_blinking();
-    if (timer_seconds >= PERIOD && !error_occurred) {
+    if (!test_mode) {
+        handle_led_blinking();
+    }
+    bool past_period = !test_mode && timer_seconds >= PERIOD;
+    bool past_period_test_mode = test_mode && timer_seconds >= PERIOD_TEST_MODE;
+    if ((past_period || past_period_test_mode) && !error_occurred) {
         if (!is_servo_on()) {
             servo_on();
             timer_seconds = 0;
@@ -200,8 +210,8 @@ void init() {
     GICR |= (1 << INT0) | (1 << INT1) | (1 << INT2);
     // Generate INT0 interrupt on rising egde
     MCUCR |= (1 << ISC01) | (1 << ISC00);
-    // Generate INT1 interrupt on falling egde
-    MCUCR |= (1 << ISC11);
+    // Generate INT1 interrupt on low level
+    // MCUCR &= !((1 << ISC10) | (1 << ISC11));
 
     I2C_init();
     // Enable SQW/OUT with frequency of 1Hz
@@ -215,7 +225,7 @@ void init() {
 
 int main(void) {
     init();
-    set_sleep_mode(SLEEP_MODE_IDLE);
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     while (1) {
         if (is_sleeping) {
             sleep_enable();
