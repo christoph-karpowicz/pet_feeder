@@ -7,13 +7,9 @@
 #include <util/delay.h>
 #include <stdbool.h>
 #include <avr/sleep.h>
+#include "i2c.h"
 
 #define DS1307_R 0xD1
-#define DS1307_W 0xD0
-#define I2C_STATUS_REG (TWSR & 0xF8)
-#define I2C_START 0x08
-#define I2C_WRITE_ADDR 0x18
-#define I2C_WRITE_BYTE 0x28
 
 #define BUTTON_STANDBY_TIMER_TOP 50
 #define BUTTON_PRESS_MANUAL_STOP 1
@@ -25,6 +21,7 @@
 volatile uint16_t timer_seconds;
 volatile uint8_t servo_on_seconds;
 
+volatile bool button_active;
 volatile uint8_t button_press_counter;
 volatile uint8_t button_wait_timer;
 
@@ -54,12 +51,16 @@ static inline bool is_servo_on() {
     return OCR1A != 0;
 }
 
-void handle_button_press() {
+void handle_button_press_sequence() {
+    disable_PWN_interrupt();
+    button_active = false;
+
     switch (button_press_counter) {
         case BUTTON_PRESS_MANUAL_STOP:
             servo_off();
             break;
         case BUTTON_PRESS_RESET_TIMER:
+            wake_up();
             timer_seconds = 0;
             error_occurred = false;
             break;
@@ -70,7 +71,6 @@ void handle_button_press() {
             break;
     }
     button_press_counter = 0;
-    disable_PWN_interrupt();
 }
 
 void handle_led_blinking() {
@@ -109,7 +109,7 @@ void disable_PWN_interrupt() {
 }
 
 void put_to_sleep() {
-    if (button_press_counter == 0 && !is_servo_on()) {
+    if (!button_active && button_press_counter == 0 && !is_servo_on()) {
         is_sleeping = true;
     }
 }
@@ -131,6 +131,7 @@ ISR(INT1_vect) {
         button_press_counter++;
         button_wait_timer = BUTTON_STANDBY_TIMER_TOP;
     }
+    button_active = true;
 }
 
 // Internal interrupt caused by Timer/Counter1
@@ -138,7 +139,7 @@ ISR(TIMER1_COMPA_vect) {
     if (button_wait_timer > 0) {
         button_wait_timer--;
     } else if (button_press_counter > 0 && button_wait_timer == 0) {
-        handle_button_press();
+        handle_button_press_sequence();
     }
 }
 
@@ -161,65 +162,6 @@ ISR(INT2_vect) {
         }
     }
     put_to_sleep();
-}
-
-void I2C_init() {
-    // 1000000/(16+2*12*4) = 100kHz
-    TWSR = (1 << TWPS0);
-    TWBR = 12;
-}
-
-void I2C_start() {
-    TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
-    while (!(TWCR & (1 << TWINT)));
-    if (I2C_STATUS_REG != I2C_START)
-        error_occurred = true;
-}
-
-void I2C_stop() {
-    TWCR = (1 << TWINT) | (1 << TWEN) | (1 << TWSTO);
-}
-
-void I2C_write(uint8_t data) {
-    TWDR = data;
-    TWCR = (1 << TWINT) | (1 << TWEN);
-    while (!(TWCR & (1 << TWINT)));
-}
-
-uint8_t I2C_read(uint8_t ack) {
-    if (ack) {
-        TWCR = (1 << TWINT) | (1 << TWEA) | (1 << TWEN);
-    } else {
-        TWCR = (1 << TWINT) | (1 << TWEN);
-    }
-    while (!(TWCR & (1 << TWINT)));
-    return TWDR;
-}
-
-void I2C_send(uint8_t addr, uint8_t data) {
-    I2C_start();
-    I2C_write(DS1307_W);
-    if (I2C_STATUS_REG != I2C_WRITE_ADDR)
-        error_occurred = true;
-    I2C_write(addr);
-    if (I2C_STATUS_REG != I2C_WRITE_BYTE)
-        error_occurred = true;
-    I2C_write(data);
-    if (I2C_STATUS_REG != I2C_WRITE_BYTE)
-        error_occurred = true;
-    I2C_stop();
-}
-
-void I2C_receive(uint8_t addr) {
-    I2C_start();
-    I2C_write(DS1307_W);
-    I2C_write(addr);
-    I2C_start();
-    I2C_write(DS1307_R);
-    uint8_t tmp;
-    tmp = I2C_read(0);
-    I2C_stop();
-    return tmp;
 }
 
 void disable_JTAG() {
@@ -263,9 +205,9 @@ void init() {
 
     I2C_init();
     // Enable SQW/OUT with frequency of 1Hz
-    I2C_send(0x07, 0x10);
+    I2C_send(0x07, 0x10, &error_occurred);
     _delay_ms(100);
-    I2C_send(0x00, 0);
+    I2C_send(0x00, 0, &error_occurred);
 
     _delay_ms(1000);
     sei();
