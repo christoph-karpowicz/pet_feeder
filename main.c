@@ -9,8 +9,6 @@
 #include <avr/sleep.h>
 #include "i2c.h"
 
-#define DS1307_R 0xD1
-
 #define BUTTON_STANDBY_TIMER_TOP 50
 #define BUTTON_PRESS_MANUAL_STOP 1
 #define BUTTON_PRESS_RESET_TIMER 2
@@ -41,7 +39,7 @@ static inline void led_off() {
 
 static inline void servo_on() {
     wake_up();
-    OCR1A = 500;
+    OCR1A = 200;
     servo_on_seconds = 0;
 }
 
@@ -70,6 +68,7 @@ void handle_button_press_sequence() {
         case BUTTON_PRESS_TEST_MODE:
             wake_up();
             led_on();
+            timer_seconds = 0;
             test_mode = true;
             break;
         default:
@@ -123,7 +122,7 @@ void wake_up() {
     is_sleeping = false;
 }
 
-// External interrupt caused by a contact
+// External interrupt caused by a limit switch
 ISR(INT0_vect) {
     servo_off();
 }
@@ -209,7 +208,7 @@ void init() {
     // Turn on interrupts on pins INT0, INT1 and INT2
     GICR |= (1 << INT0) | (1 << INT1) | (1 << INT2);
     // Generate INT0 interrupt on rising egde
-    MCUCR |= (1 << ISC01) | (1 << ISC00);
+    MCUCR |= (1 << ISC01);
     // Generate INT1 interrupt on low level
     // MCUCR &= !((1 << ISC10) | (1 << ISC11));
 
