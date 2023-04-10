@@ -14,7 +14,7 @@
 #define BUTTON_PRESS_RESET_TIMER 2
 #define BUTTON_PRESS_TEST_MODE 3
 #define SERVO_ON_MAX_SECONDS 5
-#define PERIOD_TEST_MODE 20
+#define PERIOD_TEST_MODE 10
 #define PERIOD 28800
 
 volatile uint16_t timer_seconds;
@@ -31,15 +31,19 @@ bool error_occurred;
 
 static inline void led_on() {
     PORTD |= (1 << PD7);
+    PORTC |= (1 << PC7);
+    PORTA = 0b00000000;
 }
 
 static inline void led_off() {
     PORTD &= !(1 << PD7);
+    PORTC &= (1 << PC7);
+    PORTA = 0xFF;
 }
 
 static inline void servo_on() {
     wake_up();
-    OCR1A = 200;
+    OCR1A = 1400;
     servo_on_seconds = 0;
 }
 
@@ -185,6 +189,10 @@ void disable_analog_comp() {
 void init() {
     disable_JTAG();
     disable_analog_comp();
+
+    // 7 segment display LED output
+    DDRA = 0xFF;
+    DDRC |= (1 << PC5) | (1 << PC6) | (1 << PC7);
     
     // Button
     DDRD &= !(1 << PD3);
@@ -207,7 +215,7 @@ void init() {
     // Interrupts
     // Turn on interrupts on pins INT0, INT1 and INT2
     GICR |= (1 << INT0) | (1 << INT1) | (1 << INT2);
-    // Generate INT0 interrupt on rising egde
+    // Generate INT0 interrupt on falling egde
     MCUCR |= (1 << ISC01);
     // Generate INT1 interrupt on low level
     // MCUCR &= !((1 << ISC10) | (1 << ISC11));
@@ -224,7 +232,7 @@ void init() {
 
 int main(void) {
     init();
-    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+    set_sleep_mode(SLEEP_MODE_IDLE);
     while (1) {
         if (is_sleeping) {
             sleep_enable();
