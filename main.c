@@ -9,6 +9,9 @@
 #include <avr/sleep.h>
 #include "i2c.h"
 
+#define DISPLAY_OUTPUT_PORT PORTA
+#define DISPLAY_CONTROL_PORT PORTC
+
 #define BUTTON_STANDBY_TIMER_TOP 50
 #define BUTTON_PRESS_MANUAL_STOP 1
 #define BUTTON_PRESS_RESET_TIMER 2
@@ -16,6 +19,9 @@
 #define SERVO_ON_MAX_SECONDS 5
 #define PERIOD_TEST_MODE 10
 #define PERIOD 28800
+
+uint8_t display_coms[3] = {PC7, PC6, PC5};
+uint8_t display_digits[10] = {0x03, 0x9F, 0x25, 0x0D, 0x99, 0x49, 0x41, 0x1F, 0x01, 0x09};
 
 volatile uint16_t timer_seconds;
 volatile uint8_t servo_on_seconds;
@@ -26,23 +32,44 @@ volatile uint8_t button_wait_timer;
 
 volatile bool is_sleeping;
 
+volatile bool display_enabled;
+volatile uint8_t display_timer;
+
 bool test_mode;
 bool error_occurred;
 
+void enable7segment() {
+    display_enabled = true;
+    display_timer = 0;
+    // set a 64 divider for Timer0 and enable it
+    TCCR0 |= (1 << CS01) | (1 << CS00);
+    // enable Timer0 interrupt
+    TIMSK |= (1 << OCIE0);
+}
+
+void disable7segment() {
+    TCCR0 &= !((1 << CS01) | (1 << CS00));
+    TIMSK &= !(1 << OCIE0);
+    DISPLAY_OUTPUT_PORT = 0xFF;
+    display_enabled = false;
+}
+
+void displayTime() {
+    wake_up();
+    enable7segment();
+}
+
 static inline void led_on() {
     PORTD |= (1 << PD7);
-    PORTC |= (1 << PC7);
-    PORTA = 0b00000000;
 }
 
 static inline void led_off() {
     PORTD &= !(1 << PD7);
-    PORTC &= (1 << PC7);
-    PORTA = 0xFF;
 }
 
 static inline void servo_on() {
     wake_up();
+    disable7segment();
     OCR1A = 1400;
     servo_on_seconds = 0;
 }
@@ -62,6 +89,7 @@ void handle_button_press_sequence() {
     switch (button_press_counter) {
         case BUTTON_PRESS_MANUAL_STOP:
             servo_off();
+            displayTime();
             break;
         case BUTTON_PRESS_RESET_TIMER:
             wake_up();
@@ -117,13 +145,25 @@ void disable_PWN_interrupt() {
 }
 
 void put_to_sleep() {
-    if (!button_active && button_press_counter == 0 && !is_servo_on()) {
+    if (!button_active && button_press_counter == 0 && !is_servo_on() && !display_enabled) {
         is_sleeping = true;
     }
 }
 
 void wake_up() {
     is_sleeping = false;
+}
+
+// 7 segment control
+ISR(TIMER0_COMP_vect) {
+    static uint8_t active_com = 0;
+    DISPLAY_CONTROL_PORT &= 0x1F;
+    DISPLAY_CONTROL_PORT |= (1 << display_coms[active_com]);
+    DISPLAY_OUTPUT_PORT = display_digits[1];
+    active_com++;
+    if (active_com > 2) {
+        active_com = 0;
+    }
 }
 
 // External interrupt caused by a limit switch
@@ -174,6 +214,14 @@ ISR(INT2_vect) {
             timer_seconds = 0;
         }
     }
+
+    if (display_enabled) {
+        display_timer++;
+        if (display_timer > 5) {
+            disable7segment();
+        }
+    }
+    
     put_to_sleep();
 }
 
@@ -186,20 +234,7 @@ void disable_analog_comp() {
     ACSR |= (1 << ACD);
 }
 
-void init() {
-    disable_JTAG();
-    disable_analog_comp();
-
-    // 7 segment display LED output
-    DDRA = 0xFF;
-    DDRC |= (1 << PC5) | (1 << PC6) | (1 << PC7);
-    
-    // Button
-    DDRD &= !(1 << PD3);
-    // Yellow LED
-    DDRD |= (1 << PD7);
-
-    // Servo control
+void initServoControl() {
     // Fast PWM Waveform Generation Mode
     TCCR1A |= (1 << WGM11);
     TCCR1B |= (1 << WGM12) | (1 << WGM13);
@@ -211,6 +246,32 @@ void init() {
     ICR1 = 19999;
     OCR1A = 0;
     DDRD |= (1 << PD5);
+}
+
+// 7 segment display LED output
+void init7segment() {
+    // LED output pins
+    DDRA = 0xFF;
+    // driver pins
+    DDRC |= (1 << PC5) | (1 << PC6) | (1 << PC7);
+    // set CTC mode for Timer0
+    TCCR0 |= (1 << WGM01);
+    // set Output Compare Register
+    OCR0 = 125;
+    // turn all segments off
+    DISPLAY_OUTPUT_PORT = 0xFF;
+}
+
+void init() {
+    disable_JTAG();
+    disable_analog_comp();
+
+    // Button
+    DDRD &= !(1 << PD3);
+    // Yellow LED
+    DDRD |= (1 << PD7);
+
+    initServoControl();
 
     // Interrupts
     // Turn on interrupts on pins INT0, INT1 and INT2
@@ -225,6 +286,8 @@ void init() {
     I2C_send(0x07, 0x10, &error_occurred);
     _delay_ms(100);
     I2C_send(0x00, 0, &error_occurred);
+
+    init7segment();
 
     _delay_ms(1000);
     sei();
