@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#define SECONDS_IN_AN_HOUR 3600
+#define SECONDS_IN_A_MINUTE 60
 #define DISPLAY_OUTPUT_PORT PORTA
 #define DISPLAY_CONTROL_PORT PORTC
 #define DISPLAY_LETTER_H 0b10001011
@@ -21,6 +23,8 @@ struct displayTimeLeft {
     uint8_t seconds;
 };
 struct displayTimeLeft display_time_left = { .hours = 0, .minutes = 0, .seconds = 0 };
+uint8_t* allocated_digits = NULL;
+uint8_t number_of_allocated_digits = 1;
 
 static void enable_7segment() {
     display_enabled = true;
@@ -46,34 +50,47 @@ static void display_hours(uint8_t active_com) {
     }
 }
 
-static void display_minutes_and_seconds(uint8_t time_left, uint8_t active_com) {
-    uint8_t number_of_digits = 1;
-    uint8_t* digits = (uint8_t*) calloc(number_of_digits, sizeof(uint8_t));
-    while (time_left > 0 || number_of_digits == 1) {
-        if (number_of_digits > 1) {
-            digits = realloc(digits, number_of_digits * sizeof(uint8_t));
+static uint8_t* alloc_digits(uint8_t time_left) {
+    uint8_t* digits = (uint8_t*) calloc(number_of_allocated_digits, sizeof(uint8_t));
+    while (time_left > 0 || number_of_allocated_digits == 1) {
+        if (number_of_allocated_digits > 1) {
+            digits = realloc(digits, number_of_allocated_digits * sizeof(uint8_t));
         }
         uint8_t digit = time_left % 10;
         time_left /= 10;
-        digits[number_of_digits - 1] = digit;
-        number_of_digits++;
+        digits[number_of_allocated_digits - 1] = digit;
+        number_of_allocated_digits++;
     }
+    return digits;
+}
+
+static void display_minutes_and_seconds(uint8_t time_left, uint8_t active_com) {
+    static uint8_t last_display_cycle = 3;
+
+    if (last_display_cycle != display_cycle) {
+        if (allocated_digits != NULL) {
+            free(allocated_digits);
+            number_of_allocated_digits = 1;
+        }
+        allocated_digits = alloc_digits(time_left);
+        last_display_cycle = display_cycle;
+    }
+    
     switch (active_com) {
         case 0:
-            if (number_of_digits > 1) {
-                DISPLAY_OUTPUT_PORT = display_digits[digits[1]];
+            if (number_of_allocated_digits > 1) {
+                DISPLAY_OUTPUT_PORT = display_digits[allocated_digits[1]];
             } else {
                 DISPLAY_OUTPUT_PORT = 0xFF;
             }
             break;
         case 1:
-            DISPLAY_OUTPUT_PORT = display_digits[digits[0]];
+            DISPLAY_OUTPUT_PORT = display_digits[allocated_digits[0]];
             break;
         case 2:
             DISPLAY_OUTPUT_PORT = DISPLAY_DOT;
             break;
     }
-    free(digits);
 }
 
 // 7 segment control interrupt
@@ -119,13 +136,21 @@ void disable_7segment() {
     TIMSK &= !(1 << OCIE0);
     DISPLAY_OUTPUT_PORT = 0xFF;
     display_enabled = false;
+    free(allocated_digits);
+    number_of_allocated_digits = 1;
+    allocated_digits = NULL;
 }
 
 void display_time(uint16_t period, uint16_t timer_seconds) {
+    if (display_enabled) {
+        return;
+    }
     wake_up();
     uint16_t time_left = period - timer_seconds;
-    display_time_left.hours = time_left / 3600;
-    display_time_left.minutes = (time_left - (display_time_left.hours * 3600)) / 60;
-    display_time_left.seconds = time_left - ((display_time_left.hours * 3600) + (display_time_left.minutes * 60));
+    display_time_left.hours = time_left / SECONDS_IN_AN_HOUR;
+    display_time_left.minutes = 
+        (time_left - (display_time_left.hours * SECONDS_IN_AN_HOUR)) / SECONDS_IN_A_MINUTE;
+    display_time_left.seconds = 
+        time_left - ((display_time_left.hours * SECONDS_IN_AN_HOUR) + (display_time_left.minutes * SECONDS_IN_A_MINUTE));
     enable_7segment();
 }
