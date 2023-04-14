@@ -1,5 +1,8 @@
 /main.*
 /i2c.*
+/display.*
 !/main.c
 !/i2c.c
 !/i2c.h
+!/display.c
+!/display.h
