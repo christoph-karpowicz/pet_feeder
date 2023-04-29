@@ -2,6 +2,8 @@
 #include <stdbool.h>
 #include "led.h"
 
+#define BUTTON_DATA_DIRECTION_REG DDRD
+#define BUTTON_PIN PD3
 #define BUTTON_STANDBY_TIMER_TOP 50
 #define BUTTON_PRESS_MANUAL_STOP 1
 #define BUTTON_PRESS_RESET_TIMER 2
@@ -27,7 +29,7 @@ static void handle_button_press_sequence(uint16_t period, uint16_t timer_seconds
     switch (button_press_counter) {
         case BUTTON_PRESS_MANUAL_STOP:
             servo_off();
-            display_time(period, timer_seconds);
+            init_display_time(period, timer_seconds);
             break;
         case BUTTON_PRESS_RESET_TIMER:
             wake_up();
@@ -48,7 +50,7 @@ static void handle_button_press_sequence(uint16_t period, uint16_t timer_seconds
 }
 
 void init_button() {
-    DDRD &= !(1 << PD3);
+    BUTTON_DATA_DIRECTION_REG &= !(1 << BUTTON_PIN);
 }
 
 void handle_button_press_interrupt() {

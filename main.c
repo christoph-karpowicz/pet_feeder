@@ -9,7 +9,6 @@
 #include "lib/i2c.h"
 #include "lib/display.h"
 
-#define DISPLAY_CYCLE_SECONDS 2
 #define SERVO_ON_MAX_SECONDS 5
 #define PERIOD_TEST_MODE 10
 #define PERIOD 28800
@@ -23,6 +22,7 @@ extern uint8_t button_press_counter;
 volatile bool is_sleeping;
 
 extern bool display_enabled;
+extern struct activeDisplay active_display;
 extern uint8_t display_cycle;
 extern uint8_t display_timer;
 
@@ -88,10 +88,10 @@ ISR(INT2_vect) {
 
     if (display_enabled) {
         display_timer++;
-        if (display_timer % DISPLAY_CYCLE_SECONDS == 0) {
+        if (display_timer % active_display.seconds_in_cycle == 0) {
             display_cycle++;
         }
-        if (display_cycle > 3) {
+        if (display_cycle > active_display.cycles) {
             disable_display();
         }
     }
@@ -117,6 +117,8 @@ void init() {
 
     _delay_ms(1000);
     sei();
+
+    init_display_greeting();
 }
 
 int main(void) {

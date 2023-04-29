@@ -1,7 +1,7 @@
 #include <avr/io.h>
-#include <avr/interrupt.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include "display.h"
 
 #define SECONDS_IN_AN_HOUR 3600
 #define SECONDS_IN_A_MINUTE 60
@@ -9,24 +9,24 @@
 #define DISPLAY_CONTROL_PORT PORTC
 #define DISPLAY_LETTER_H 0b10001011
 #define DISPLAY_DOT 0b01111111
+#define DISPLAY_CONTENT_GREETING 1
+#define DISPLAY_CONTENT_TIME 2
 
 uint8_t display_coms[3] = {PC7, PC6, PC5};
 // digit codes for DPgfedcba LED layout
 uint8_t display_digits[10] = {0xC0, 0xF9, 0xA4, 0xB0, 0x99, 0x92, 0x82, 0xF8, 0x80, 0x90};
+// letter codes for H E Y
+uint8_t display_greeting_letters[3] = {0x89, 0x86, 0x91};
 
 volatile bool display_enabled;
+struct activeDisplay active_display = { .content = 0, .cycles = 0, .seconds_in_cycle = 0 };
 volatile uint8_t display_cycle;
 volatile uint8_t display_timer;
-struct displayTimeLeft {
-    uint8_t hours;
-    uint8_t minutes;
-    uint8_t seconds;
-};
 struct displayTimeLeft display_time_left = { .hours = 0, .minutes = 0, .seconds = 0 };
 uint8_t* allocated_digits = NULL;
 uint8_t number_of_allocated_digits = 1;
 
-static void enable_7segment() {
+static void enable_display() {
     display_enabled = true;
     display_timer = 0;
     display_cycle = 1;
@@ -93,10 +93,7 @@ static void display_minutes_and_seconds(uint8_t time_left, uint8_t active_com) {
     }
 }
 
-void handle_display_interrupt() {
-    static uint8_t active_com = 0;
-    DISPLAY_CONTROL_PORT &= 0x1F;
-    DISPLAY_CONTROL_PORT |= (1 << display_coms[active_com]);
+static void display_time(uint8_t active_com) {
     switch (display_cycle) {
         case 1:
             display_hours(active_com);
@@ -110,6 +107,23 @@ void handle_display_interrupt() {
         default:
             DISPLAY_OUTPUT_PORT = 0xFF;
     }
+}
+
+static void display_greeting(uint8_t active_com) {
+    DISPLAY_OUTPUT_PORT = display_greeting_letters[active_com];
+}
+
+void handle_display_interrupt() {
+    static uint8_t active_com = 0;
+    DISPLAY_CONTROL_PORT &= 0x1F;
+    DISPLAY_CONTROL_PORT |= (1 << display_coms[active_com]);
+
+    if (active_display.content == DISPLAY_CONTENT_TIME) {
+        display_time(active_com);
+    } else {
+        display_greeting(active_com);
+    }
+
     active_com++;
     if (active_com > 2) {
         active_com = 0;
@@ -135,21 +149,42 @@ void disable_display() {
     TIMSK &= !(1 << OCIE0);
     DISPLAY_OUTPUT_PORT = 0xFF;
     display_enabled = false;
-    free(allocated_digits);
-    number_of_allocated_digits = 1;
-    allocated_digits = NULL;
+    if (allocated_digits != NULL){
+        free(allocated_digits);
+        number_of_allocated_digits = 1;
+        allocated_digits = NULL;
+    }
 }
 
-void display_time(uint16_t period, uint16_t timer_seconds) {
+void init_display_time(uint16_t period, uint16_t timer_seconds) {
     if (display_enabled) {
         return;
     }
     wake_up();
+
     uint16_t time_left = period - timer_seconds;
     display_time_left.hours = time_left / SECONDS_IN_AN_HOUR;
     display_time_left.minutes = 
         (time_left - (display_time_left.hours * SECONDS_IN_AN_HOUR)) / SECONDS_IN_A_MINUTE;
     display_time_left.seconds = 
         time_left - ((display_time_left.hours * SECONDS_IN_AN_HOUR) + (display_time_left.minutes * SECONDS_IN_A_MINUTE));
-    enable_7segment();
+
+    active_display.content = DISPLAY_CONTENT_TIME;
+    active_display.cycles = 3;
+    active_display.seconds_in_cycle = 2;
+
+    enable_display();
+}
+
+void init_display_greeting() {
+    if (display_enabled) {
+        return;
+    }
+    wake_up();
+
+    active_display.content = DISPLAY_CONTENT_GREETING;
+    active_display.cycles = 1;
+    active_display.seconds_in_cycle = 6;
+
+    enable_display();
 }
