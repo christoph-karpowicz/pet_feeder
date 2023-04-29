@@ -93,8 +93,7 @@ static void display_minutes_and_seconds(uint8_t time_left, uint8_t active_com) {
     }
 }
 
-// 7 segment control interrupt
-ISR(TIMER0_COMP_vect) {
+void handle_display_interrupt() {
     static uint8_t active_com = 0;
     DISPLAY_CONTROL_PORT &= 0x1F;
     DISPLAY_CONTROL_PORT |= (1 << display_coms[active_com]);
@@ -118,7 +117,7 @@ ISR(TIMER0_COMP_vect) {
 }
 
 // 7 segment display LED output
-void init_7segment() {
+void init_display() {
     // LED output pins
     DDRA = 0xFF;
     // driver pins
@@ -131,7 +130,7 @@ void init_7segment() {
     DISPLAY_OUTPUT_PORT = 0xFF;
 }
 
-void disable_7segment() {
+void disable_display() {
     TCCR0 &= !((1 << CS01) | (1 << CS00));
     TIMSK &= !(1 << OCIE0);
     DISPLAY_OUTPUT_PORT = 0xFF;
