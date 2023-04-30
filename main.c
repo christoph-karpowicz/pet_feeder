@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <avr/sleep.h>
 #include "lib/init.h"
+#include "lib/sleep.h"
 #include <util/delay.h>
 #include "lib/led.h"
 #include "lib/servo.h"
@@ -10,8 +11,8 @@
 #include "lib/display.h"
 
 #define SERVO_ON_MAX_SECONDS 5
-#define PERIOD_TEST_MODE 10
-#define PERIOD 28800
+#define TIMER_TOP_TEST_MODE 10
+#define TIMER_TOP 28800
 
 volatile uint16_t timer_seconds;
 volatile uint8_t servo_on_seconds;
@@ -19,7 +20,7 @@ volatile uint8_t servo_on_seconds;
 extern bool button_active;
 extern uint8_t button_press_counter;
 
-volatile bool is_sleeping;
+extern bool is_sleeping;
 
 extern bool display_enabled;
 extern struct activeDisplay active_display;
@@ -37,12 +38,12 @@ void prepare_servo_on() {
 
 void put_to_sleep() {
     if (!button_active && button_press_counter == 0 && !is_servo_on() && !display_enabled) {
-        is_sleeping = true;
+        sleep();
     }
 }
 
-void wake_up() {
-    is_sleeping = false;
+uint16_t get_timer_top() {
+    return test_mode ? TIMER_TOP_TEST_MODE : TIMER_TOP;
 }
 
 // External interrupt caused by a limit switch
@@ -58,7 +59,7 @@ ISR(INT1_vect) {
 
 // Internal interrupt caused by Timer/Counter1
 ISR(TIMER1_COMPA_vect) {
-    handle_button_timer_interrupt(PERIOD, timer_seconds, &error_occurred, &test_mode);
+    handle_button_timer_interrupt(get_timer_top(), &timer_seconds, &error_occurred, &test_mode);
 }
 
 // External interrupt caused by a DS1307 RTC clock
@@ -76,9 +77,8 @@ ISR(INT2_vect) {
     if (!test_mode) {
         handle_led_blinking(error_occurred, timer_seconds);
     }
-    bool past_period = !test_mode && timer_seconds >= PERIOD;
-    bool past_period_test_mode = test_mode && timer_seconds >= PERIOD_TEST_MODE;
-    if ((past_period || past_period_test_mode) && !error_occurred) {
+    bool past_counter_max = timer_seconds >= get_timer_top();
+    if (past_counter_max && !error_occurred) {
         if (!is_servo_on()) {
             prepare_servo_on();
             servo_on();

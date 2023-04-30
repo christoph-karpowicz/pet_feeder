@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include "display.h"
+#include "sleep.h"
 
 #define SECONDS_IN_AN_HOUR 3600
 #define SECONDS_IN_A_MINUTE 60
@@ -156,13 +157,13 @@ void disable_display() {
     }
 }
 
-void init_display_time(uint16_t period, uint16_t timer_seconds) {
+void init_display_time(uint16_t timer_top, uint16_t *timer_seconds) {
     if (display_enabled) {
         return;
     }
     wake_up();
 
-    uint16_t time_left = period - timer_seconds;
+    uint16_t time_left = timer_top - *timer_seconds;
     display_time_left.hours = time_left / SECONDS_IN_AN_HOUR;
     display_time_left.minutes = 
         (time_left - (display_time_left.hours * SECONDS_IN_AN_HOUR)) / SECONDS_IN_A_MINUTE;

@@ -16,7 +16,7 @@ struct displayTimeLeft {
 void handle_display_interrupt();
 void init_display();
 void disable_display();
-void init_display_time(uint16_t period, uint16_t timer_seconds);
+void init_display_time(uint16_t timer_top, uint16_t *timer_seconds);
 void init_display_greeting();
 
 #endif
