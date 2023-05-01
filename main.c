@@ -65,6 +65,7 @@ ISR(TIMER1_COMPA_vect) {
 // External interrupt caused by a DS1307 RTC clock
 ISR(INT2_vect) {
     timer_seconds++;
+    
     if (is_servo_on()) {
         servo_on_seconds++;
         if (servo_on_seconds > SERVO_ON_MAX_SECONDS) {
@@ -77,6 +78,7 @@ ISR(INT2_vect) {
     if (!test_mode) {
         handle_led_blinking(error_occurred, timer_seconds);
     }
+
     bool past_counter_max = timer_seconds >= get_timer_top();
     if (past_counter_max && !error_occurred) {
         if (!is_servo_on()) {

@@ -8,8 +8,8 @@
 #define SECONDS_IN_A_MINUTE 60
 #define DISPLAY_OUTPUT_PORT PORTA
 #define DISPLAY_CONTROL_PORT PORTC
-#define DISPLAY_LETTER_H 0b10001011
-#define DISPLAY_DOT 0b01111111
+#define DISPLAY_LETTER_H 0x8B
+#define DISPLAY_DOT 0x7F
 #define DISPLAY_CONTENT_GREETING 1
 #define DISPLAY_CONTENT_TIME 2
 
@@ -20,12 +20,13 @@ uint8_t display_digits[10] = {0xC0, 0xF9, 0xA4, 0xB0, 0x99, 0x92, 0x82, 0xF8, 0x
 uint8_t display_greeting_letters[3] = {0x89, 0x86, 0x91};
 
 volatile bool display_enabled;
-struct activeDisplay active_display = { .content = 0, .cycles = 0, .seconds_in_cycle = 0 };
 volatile uint8_t display_cycle;
 volatile uint8_t display_timer;
+
+struct activeDisplay active_display = { .content = 0, .cycles = 0, .seconds_in_cycle = 0 };
 struct displayTimeLeft display_time_left = { .hours = 0, .minutes = 0, .seconds = 0 };
 uint8_t* allocated_digits = NULL;
-uint8_t number_of_allocated_digits = 1;
+uint8_t number_of_allocated_digits = 0;
 
 static void enable_display() {
     display_enabled = true;
@@ -51,15 +52,21 @@ static void display_hours(uint8_t active_com) {
     }
 }
 
+static inline void reset_allocated_digits() {
+    free(allocated_digits);
+    number_of_allocated_digits = 0;
+    allocated_digits = NULL;
+}
+
 static uint8_t* alloc_digits(uint8_t time_left) {
-    uint8_t* digits = (uint8_t*) calloc(number_of_allocated_digits, sizeof(uint8_t));
-    while (time_left > 0 || number_of_allocated_digits == 1) {
-        if (number_of_allocated_digits > 1) {
-            digits = realloc(digits, number_of_allocated_digits * sizeof(uint8_t));
+    uint8_t* digits = (uint8_t*) calloc(1, sizeof(uint8_t));
+    while (time_left > 0 || number_of_allocated_digits == 0) {
+        if (number_of_allocated_digits > 0) {
+            digits = realloc(digits, (number_of_allocated_digits + 1) * sizeof(uint8_t));
         }
         uint8_t digit = time_left % 10;
         time_left /= 10;
-        digits[number_of_allocated_digits - 1] = digit;
+        digits[number_of_allocated_digits] = digit;
         number_of_allocated_digits++;
     }
     return digits;
@@ -70,8 +77,7 @@ static void display_minutes_and_seconds(uint8_t time_left, uint8_t active_com) {
 
     if (last_display_cycle != display_cycle) {
         if (allocated_digits != NULL) {
-            free(allocated_digits);
-            number_of_allocated_digits = 1;
+            reset_allocated_digits();
         }
         allocated_digits = alloc_digits(time_left);
         last_display_cycle = display_cycle;
@@ -82,7 +88,7 @@ static void display_minutes_and_seconds(uint8_t time_left, uint8_t active_com) {
             if (number_of_allocated_digits > 1) {
                 DISPLAY_OUTPUT_PORT = display_digits[allocated_digits[1]];
             } else {
-                DISPLAY_OUTPUT_PORT = 0xFF;
+                DISPLAY_OUTPUT_PORT = display_digits[0];
             }
             break;
         case 1:
@@ -116,7 +122,9 @@ static void display_greeting(uint8_t active_com) {
 
 void handle_display_interrupt() {
     static uint8_t active_com = 0;
+    // reset active com
     DISPLAY_CONTROL_PORT &= 0x1F;
+    // activate current com
     DISPLAY_CONTROL_PORT |= (1 << display_coms[active_com]);
 
     if (active_display.content == DISPLAY_CONTENT_TIME) {
@@ -125,6 +133,7 @@ void handle_display_interrupt() {
         display_greeting(active_com);
     }
 
+    // increment active com so that 3 digits/letters can be displayed
     active_com++;
     if (active_com > 2) {
         active_com = 0;
@@ -145,25 +154,13 @@ void init_display() {
     DISPLAY_OUTPUT_PORT = 0xFF;
 }
 
-void disable_display() {
-    TCCR0 &= !((1 << CS01) | (1 << CS00));
-    TIMSK &= !(1 << OCIE0);
-    DISPLAY_OUTPUT_PORT = 0xFF;
-    display_enabled = false;
-    if (allocated_digits != NULL){
-        free(allocated_digits);
-        number_of_allocated_digits = 1;
-        allocated_digits = NULL;
-    }
-}
-
-void init_display_time(uint16_t timer_top, uint16_t *timer_seconds) {
+void init_display_time(uint16_t timer_top, uint16_t timer_seconds) {
     if (display_enabled) {
         return;
     }
     wake_up();
 
-    uint16_t time_left = timer_top - *timer_seconds;
+    uint16_t time_left = timer_top - timer_seconds;
     display_time_left.hours = time_left / SECONDS_IN_AN_HOUR;
     display_time_left.minutes = 
         (time_left - (display_time_left.hours * SECONDS_IN_AN_HOUR)) / SECONDS_IN_A_MINUTE;
@@ -188,4 +185,14 @@ void init_display_greeting() {
     active_display.seconds_in_cycle = 6;
 
     enable_display();
+}
+
+void disable_display() {
+    TCCR0 &= !((1 << CS01) | (1 << CS00));
+    TIMSK &= !(1 << OCIE0);
+    DISPLAY_OUTPUT_PORT = 0xFF;
+    display_enabled = false;
+    if (allocated_digits != NULL){
+        reset_allocated_digits();
+    }
 }
