@@ -32,7 +32,9 @@ bool error_occurred;
 
 void prepare_servo_on() {
     wake_up();
-    disable_display();
+    if (display_enabled) {
+        disable_display();
+    }
     servo_on_seconds = 0;
 }
 
@@ -54,12 +56,20 @@ ISR(INT0_vect) {
 // External interrupt caused by a button
 ISR(INT1_vect) {
     wake_up();
+    if (display_enabled) {
+        disable_display();
+    }
     handle_button_press_interrupt();
 }
 
 // Internal interrupt caused by Timer/Counter1
 ISR(TIMER1_COMPA_vect) {
     handle_button_timer_interrupt(get_timer_top(), &timer_seconds, &error_occurred, &test_mode);
+}
+
+// 7 segment control interrupt
+ISR(TIMER0_COMP_vect) {
+    handle_display_interrupt();
 }
 
 // External interrupt caused by a DS1307 RTC clock
@@ -101,11 +111,6 @@ ISR(INT2_vect) {
     put_to_sleep();
 }
 
-// 7 segment control interrupt
-ISR(TIMER0_COMP_vect) {
-    handle_display_interrupt();
-}
-
 void init() {
     disable_JTAG();
     disable_analog_comp();
@@ -125,7 +130,7 @@ void init() {
 
 int main(void) {
     init();
-    set_sleep_mode(SLEEP_MODE_IDLE);
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     while (1) {
         if (is_sleeping) {
             sleep_enable();

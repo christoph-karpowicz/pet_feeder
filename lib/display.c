@@ -10,20 +10,20 @@
 #define DISPLAY_CONTROL_PORT PORTC
 #define DISPLAY_LETTER_H 0x8B
 #define DISPLAY_DOT 0x7F
-#define DISPLAY_CONTENT_GREETING 1
-#define DISPLAY_CONTENT_TIME 2
 
 uint8_t display_coms[3] = {PC7, PC6, PC5};
 // digit codes for DPgfedcba LED layout
 uint8_t display_digits[10] = {0xC0, 0xF9, 0xA4, 0xB0, 0x99, 0x92, 0x82, 0xF8, 0x80, 0x90};
 // letter codes for H E Y
 uint8_t display_greeting_letters[3] = {0x89, 0x86, 0x91};
+// letter codes for E R R
+uint8_t display_error_letters[3] = {0x86, 0x88, 0x88};
 
 volatile bool display_enabled;
 volatile uint8_t display_cycle;
 volatile uint8_t display_timer;
 
-struct activeDisplay active_display = { .content = 0, .cycles = 0, .seconds_in_cycle = 0 };
+struct activeDisplay active_display = { .display_func = NULL, .cycles = 0, .seconds_in_cycle = 0 };
 struct displayTimeLeft display_time_left = { .hours = 0, .minutes = 0, .seconds = 0 };
 uint8_t* allocated_digits = NULL;
 uint8_t number_of_allocated_digits = 0;
@@ -95,7 +95,7 @@ static void display_minutes_and_seconds(uint8_t time_left, uint8_t active_com) {
             DISPLAY_OUTPUT_PORT = display_digits[allocated_digits[0]];
             break;
         case 2:
-            DISPLAY_OUTPUT_PORT = DISPLAY_DOT;
+            DISPLAY_OUTPUT_PORT = 0xFF;
             break;
     }
 }
@@ -120,6 +120,10 @@ static void display_greeting(uint8_t active_com) {
     DISPLAY_OUTPUT_PORT = display_greeting_letters[active_com];
 }
 
+static void display_error(uint8_t active_com) {
+    DISPLAY_OUTPUT_PORT = display_error_letters[active_com];
+}
+
 void handle_display_interrupt() {
     static uint8_t active_com = 0;
     // reset active com
@@ -127,11 +131,7 @@ void handle_display_interrupt() {
     // activate current com
     DISPLAY_CONTROL_PORT |= (1 << display_coms[active_com]);
 
-    if (active_display.content == DISPLAY_CONTENT_TIME) {
-        display_time(active_com);
-    } else {
-        display_greeting(active_com);
-    }
+    (*active_display.display_func)(active_com);
 
     // increment active com so that 3 digits/letters can be displayed
     active_com++;
@@ -167,7 +167,7 @@ void init_display_time(uint16_t timer_top, uint16_t timer_seconds) {
     display_time_left.seconds = 
         time_left - ((display_time_left.hours * SECONDS_IN_AN_HOUR) + (display_time_left.minutes * SECONDS_IN_A_MINUTE));
 
-    active_display.content = DISPLAY_CONTENT_TIME;
+    active_display.display_func = &display_time;
     active_display.cycles = 3;
     active_display.seconds_in_cycle = 2;
 
@@ -180,7 +180,20 @@ void init_display_greeting() {
     }
     wake_up();
 
-    active_display.content = DISPLAY_CONTENT_GREETING;
+    active_display.display_func = &display_greeting;
+    active_display.cycles = 1;
+    active_display.seconds_in_cycle = 6;
+
+    enable_display();
+}
+
+void init_display_error() {
+    if (display_enabled) {
+        return;
+    }
+    wake_up();
+
+    active_display.display_func = &display_error;
     active_display.cycles = 1;
     active_display.seconds_in_cycle = 6;
 

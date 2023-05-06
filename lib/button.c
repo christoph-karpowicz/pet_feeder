@@ -22,6 +22,11 @@ static void disable_PWM_button_interrupt() {
     TIMSK &= !(1 << OCIE1A);
 }
 
+static void resolve_error(uint16_t *timer_seconds, bool *error_occurred) {
+    *timer_seconds = 0;
+    *error_occurred = false;
+}
+
 static void handle_button_press_sequence(uint16_t timer_top, uint16_t *timer_seconds, 
                                          bool *error_occurred, bool *test_mode) {
     disable_PWM_button_interrupt();
@@ -29,16 +34,19 @@ static void handle_button_press_sequence(uint16_t timer_top, uint16_t *timer_sec
     switch (button_press_counter) {
         case BUTTON_PRESS_MANUAL_STOP:
             servo_off();
-            init_display_time(timer_top, *timer_seconds);
+            if (*error_occurred) {
+                init_display_error();
+            } else {
+                init_display_time(timer_top, *timer_seconds);
+            }
             break;
         case BUTTON_PRESS_RESET_TIMER:
-            *timer_seconds = 0;
-            *error_occurred = false;
+            resolve_error(timer_seconds, error_occurred);
             *test_mode = false;
             break;
         case BUTTON_PRESS_TEST_MODE:
             led_on();
-            *timer_seconds = 0;
+            resolve_error(timer_seconds, error_occurred);
             *test_mode = true;
             break;
         default:
