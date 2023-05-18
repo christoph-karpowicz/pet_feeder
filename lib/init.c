@@ -9,6 +9,12 @@ void disable_analog_comp() {
     ACSR |= (1 << ACD);
 }
 
+void enable_pull_ups() {
+    PORTB |= (1 << PB0) | (1 << PB1) | (1 << PB3);
+    PORTD |= (1 << PD0) | (1 << PD1) | (1 << PD4) | (1 << PD6);
+    PORTC |= (1 << PC4) | (1 << PC3) | (1 << PC2);
+}
+
 void init_interrupts() {
     // Turn on interrupts on pins INT0, INT1 and INT2
     GICR |= (1 << INT0) | (1 << INT1) | (1 << INT2);

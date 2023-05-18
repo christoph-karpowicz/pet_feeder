@@ -26,6 +26,6 @@ void servo_off() {
     OCR1A = SERVO_OFF_VALUE;
 }
 
-bool is_servo_on() {
-    return OCR1A != SERVO_OFF_VALUE;
+bool is_servo_off() {
+    return OCR1A == SERVO_OFF_VALUE;
 }
