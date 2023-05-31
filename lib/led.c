@@ -5,7 +5,7 @@
 #define LED_PIN PD7
 
 static void led_off() {
-    LED_PORT &= !(1 << LED_PIN);
+    LED_PORT &= ~(1 << LED_PIN);
 }
 
 void led_on() {

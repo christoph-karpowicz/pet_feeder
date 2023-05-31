@@ -19,7 +19,7 @@ static void enable_PWM_button_interrupt() {
 }
 
 static void disable_PWM_button_interrupt() {
-    TIMSK &= !(1 << OCIE1A);
+    TIMSK &= ~(1 << OCIE1A);
 }
 
 static void resolve_error(uint16_t *timer_seconds, bool *error_occurred) {
@@ -57,7 +57,7 @@ static void handle_button_press_sequence(uint16_t timer_top, uint16_t *timer_sec
 }
 
 void init_button() {
-    BUTTON_DATA_DIRECTION_REG &= !(1 << BUTTON_PIN);
+    BUTTON_DATA_DIRECTION_REG &= ~(1 << BUTTON_PIN);
 }
 
 void handle_button_press_interrupt() {

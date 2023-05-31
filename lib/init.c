@@ -11,7 +11,7 @@ void disable_analog_comp() {
 
 void enable_pull_ups() {
     PORTB |= (1 << PB0) | (1 << PB1) | (1 << PB3);
-    PORTD |= (1 << PD0) | (1 << PD1) | (1 << PD4) | (1 << PD6);
+    PORTD |= (1 << PD0) | (1 << PD1) | (1 << PD4);
     PORTC |= (1 << PC4) | (1 << PC3) | (1 << PC2);
 }
 
@@ -21,5 +21,5 @@ void init_interrupts() {
     // Generate INT0 interrupt on falling egde
     MCUCR |= (1 << ISC01);
     // Generate INT1 interrupt on low level
-    // MCUCR &= !((1 << ISC10) | (1 << ISC11));
+    // MCUCR &= ~((1 << ISC10) | (1 << ISC11));
 }

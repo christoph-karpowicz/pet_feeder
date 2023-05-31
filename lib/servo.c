@@ -15,15 +15,19 @@ void init_servo_control() {
     // TOP value
     ICR1 = 19999;
     OCR1A = 0;
-    DDRD |= (1 << PD5);
+    // PD5 is the PWM output
+    // and PD6 is used to apply voltage to a MOSFET's gate to power the servo
+    DDRD |= (1 << PD5) | (1 << PD6);
 }
 
 void servo_on() {
+    PORTD |= (1 << PD6);
     OCR1A = SERVO_ON_VALUE;
 }
 
 void servo_off() {
     OCR1A = SERVO_OFF_VALUE;
+    PORTD &= ~(1 << PD6);
 }
 
 bool is_servo_off() {

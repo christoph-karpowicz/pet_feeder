@@ -201,8 +201,8 @@ void init_display_error() {
 }
 
 void disable_display() {
-    TCCR0 &= !((1 << CS01) | (1 << CS00));
-    TIMSK &= !(1 << OCIE0);
+    TCCR0 &= ~((1 << CS01) | (1 << CS00));
+    TIMSK &= ~(1 << OCIE0);
     DISPLAY_OUTPUT_PORT = 0xFF;
     display_enabled = false;
     if (allocated_digits != NULL){
