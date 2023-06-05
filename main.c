@@ -56,7 +56,9 @@ inline void handle_servo_on_over_limit() {
 
 // External interrupt caused by a limit switch
 ISR(INT0_vect) {
-    servo_off();
+    if (servo_timer >= 1) {
+        servo_off();
+    }
 }
 
 // External interrupt caused by a button

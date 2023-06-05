@@ -1,7 +1,7 @@
 #include <avr/io.h>
 #include <stdbool.h>
 
-#define SERVO_ON_VALUE 1400
+#define SERVO_ON_VALUE 1430
 #define SERVO_OFF_VALUE 0
 
 void init_servo_control() {
